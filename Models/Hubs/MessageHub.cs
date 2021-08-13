@@ -102,7 +102,7 @@ namespace API.Models.Hubs
         {
             var userId = userManager.GetUserId(Context.User);
             var otherUser = await userManager.FindByNameAsync(username);
-
+            //
             var friend = await _context.Friends
             .Include(f => f.Conversation)
                 .ThenInclude(c => c.Recipients)
