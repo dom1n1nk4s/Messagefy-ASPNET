@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -7,6 +8,7 @@ using API.DTOs;
 using API.Hubs;
 using API.Models;
 using Domain;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
@@ -18,14 +20,14 @@ namespace API.Controllers
     [ApiController]
     public class MessageController : ControllerBase
     {
-        private readonly Context _context;
+        private readonly Context context;
         private readonly UserManager<AppUser> userManager;
         private readonly IHubContext<MessageHub> hub;
 
-        public MessageController(Context context, UserManager<AppUser> UserManager, IHubContext<MessageHub> hub)
+        public MessageController(Context context, UserManager<AppUser> userManager, IHubContext<MessageHub> hub)
         {
-            _context = context;
-            userManager = UserManager;
+            this.context = context;
+            this.userManager = userManager;
             this.hub = hub;
         }
 
@@ -37,7 +39,7 @@ namespace API.Controllers
             var otherUser = await userManager.FindByNameAsync(username);
             if (otherUser == null) return NotFound("No such user found");
 
-            var friend = await _context.Friends.Include(t => t.Conversation).ThenInclude(t => t.Messages).FirstAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
+            var friend = await context.Friends.Include(t => t.Conversation).ThenInclude(t => t.Messages).FirstAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
             if (friend == null) return BadRequest("You're not friends");
             var conversation = friend.Conversation;
             if (conversation == null) return Ok(null); //shouldnt be possible
@@ -56,14 +58,14 @@ namespace API.Controllers
             if (otherUser == null) return NotFound("No such user found");
             if (!message.Content.Any()) return BadRequest("Empty message");
             if (userId == otherUser.Id) return BadRequest("You can't send a message to yourself");
-            var friend = await _context.Friends.Include(t => t.Conversation).ThenInclude(t => t.Messages).FirstAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
+            var friend = await context.Friends.Include(t => t.Conversation).ThenInclude(t => t.Messages).FirstAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
             if (friend == null) return BadRequest("You're not friends");
             if (friend.Conversation == null) friend.Conversation = new Conversation();
             message.SenderId = userId;
             message.Date = DateTime.Now;
             friend.Conversation.Messages.Add(message);
 
-            var result = await _context.SaveChangesAsync() > 0;
+            var result = await context.SaveChangesAsync() > 0;
             if (!result) return BadRequest("Failed to create message");
             MessageDto messageDto = await CreateMessageObject(message);
 
@@ -78,14 +80,14 @@ namespace API.Controllers
         public async Task<ActionResult<MessageDto>> PutMessage(Guid id, MessageDto messageDto)
         {
             var userId = userManager.GetUserId(User);
-            var message = await _context.Messages.FindAsync(id);
+            var message = await context.Messages.FindAsync(id);
             if (message == null) return NotFound("No such message found");
             if (message.SenderId != userId) return Unauthorized("You're not the sender!");
             if (!message.Content.Any()) return BadRequest("Empty message");
             message.Content = messageDto.Content;
             message.DateEdited = DateTime.Now;
 
-            var result = await _context.SaveChangesAsync() > 0;
+            var result = await context.SaveChangesAsync() > 0;
 
             if (!result) return BadRequest("Failed to update message");
 
@@ -98,16 +100,17 @@ namespace API.Controllers
         public async Task<IActionResult> DeleteMessage(Guid id)
         {
             var userId = userManager.GetUserId(User);
-            var message = await _context.Messages.FindAsync(id);
+            var message = await context.Messages.FindAsync(id);
             if (message == null) return NotFound("No such message found");
             if (message.SenderId != userId) return Unauthorized("You're not the sender!");
 
-            _context.Messages.Remove(message);
-            var result = await _context.SaveChangesAsync() > 0;
+            context.Messages.Remove(message);
+            var result = await context.SaveChangesAsync() > 0;
 
             if (!result) return BadRequest("Failed to remove message");
             return Ok("Removed!");
         }
+
         private async Task<MessageDto> CreateMessageObject(Message message)
         {
             var sender = await userManager.FindByIdAsync(message.SenderId);

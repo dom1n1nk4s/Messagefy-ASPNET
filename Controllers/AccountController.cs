@@ -21,6 +21,7 @@ namespace API.Controllers
         public SignInManager<AppUser> SignInManager { get; }
         private readonly TokenService tokenService;
         private readonly Context context;
+        private readonly ImageFunctions imageFunctions;
 
         public AccountController(UserManager<AppUser> UserManager, SignInManager<AppUser> signInManager, TokenService tokenService, Context context)
         {
@@ -28,6 +29,7 @@ namespace API.Controllers
             this.context = context;
             this.SignInManager = signInManager;
             this.UserManager = UserManager;
+            imageFunctions = new ImageFunctions(UserManager, context);
 
         }
         [HttpPost("login")]
@@ -83,7 +85,7 @@ namespace API.Controllers
             return new UserDto
             {
                 DisplayName = user.DisplayName,
-                Image = await ImageFunctions.GetUserImage(user.UserName, UserManager, context),
+                Image = await imageFunctions.GetUserImage(user.UserName),
                 Token = tokenService.CreateToken(user),
                 Username = user.UserName,
 

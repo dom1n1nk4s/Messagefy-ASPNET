@@ -14,5 +14,7 @@ namespace API.Models
         public string SenderId { get; set; }
         public DateTime DateEdited { get; set; }
         public bool IsSeen { get; set; }
+        //default value should be false
+        public bool IsReferenceToFile { get; set; }
     }
 }

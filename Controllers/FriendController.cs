@@ -17,12 +17,15 @@ namespace API.Controllers
     public class FriendController : ControllerBase
     {
         private readonly Context context;
+        private readonly ImageFunctions imageFunctions;
 
         public UserManager<AppUser> userManager { get; }
+
         public FriendController(UserManager<AppUser> userManager, Context context)
         {
             this.userManager = userManager;
             this.context = context;
+            imageFunctions = new ImageFunctions(userManager, context);
         }
         [HttpGet("send/{username}")]
         public async Task<ActionResult<FriendRequestDto>> SendRequest(string username)
@@ -138,7 +141,7 @@ namespace API.Controllers
                 UserName = otherUser.UserName,
                 DisplayName = otherUser.DisplayName,
                 MessageCount = friend.Conversation.Messages.Count(),
-                Image = await ImageFunctions.GetUserImage(otherUser.UserName, userManager, context),
+                Image = await imageFunctions.GetUserImage(otherUser.UserName),
             };
             if (friend.Conversation.Messages.Any())
             {
@@ -158,7 +161,7 @@ namespace API.Controllers
             var otherUser = await userManager.FindByIdAsync(otherUserId);
             return new FriendRequestDto
             {
-                Image = await ImageFunctions.GetUserImage(otherUser.UserName, userManager, context),
+                Image = await imageFunctions.GetUserImage(otherUser.UserName),
                 IsOutbound = (userId == friendRequest.SenderId),
                 DisplayName = otherUser.DisplayName,
                 RequestId = friendRequest.Id.ToString(),

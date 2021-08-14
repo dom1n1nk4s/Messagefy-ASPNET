@@ -9,5 +9,6 @@ namespace API.DTOs
         public string Date { get; set; }
         public string SenderName { get; set; }
         public string DateEdited { get; set; }
+        public bool IsReferenceToFile { get; set; }
     }
 }

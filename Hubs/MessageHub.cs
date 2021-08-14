@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using API.DTOs;
+using API.HelperFunctions;
 using API.Models;
 using Domain;
 using Microsoft.AspNetCore.Authorization;
@@ -16,11 +17,14 @@ namespace API.Hubs
     {
         private readonly Context _context;
         private readonly UserManager<AppUser> userManager;
+        private readonly MessageFunctions messageFunctions;
+
 
         public MessageHub(Context context, UserManager<AppUser> userManager)
         {
             this._context = context;
             this.userManager = userManager;
+            messageFunctions = new MessageFunctions(userManager);
         }
 
         public async Task DownloadMessages(string username, int num = 0)
@@ -32,7 +36,7 @@ namespace API.Hubs
             var friend = await _context.Friends.Include(t => t.Conversation).ThenInclude(t => t.Messages).AsNoTracking().FirstOrDefaultAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
             if (friend == null) throw new HubException("You're not friends");
             var conversation = friend.Conversation;
-            var messageList = conversation.Messages.OrderBy(x => x.Date).Skip(num).TakeLast(20).Select(async m => await CreateMessageObject(m)).Select(m => m.Result).Reverse().ToList();
+            var messageList = conversation.Messages.OrderBy(x => x.Date).Skip(num).TakeLast(20).Select(async m => await messageFunctions.CreateMessageObject(m)).Select(m => m.Result).Reverse().ToList();
 
             await Clients.Caller.ReceiveMessages(messageList);
 
@@ -50,10 +54,10 @@ namespace API.Hubs
             message.SenderId = userId;
             message.Date = DateTime.Now;
             friend.Conversation.Messages.Add(message);
-            // friend.Conversation.Recipients.FirstOrDefault(r => r.UserId == userId).LastSeenMessageId = message.Id;
+            // friend.Conversation.Recipients.FirstOrDefault(r => r.UserId == userId).LastSeenMessageId = message.Id; // will crash due to id not being set yet
             var result = await _context.SaveChangesAsync() > 0;
             if (!result) throw new HubException("Failed to create message");
-            var messageDto = await CreateMessageObject(message);
+            var messageDto = await messageFunctions.CreateMessageObject(message);
 
             await Clients.User(otherUser.Id).ReceiveMessage(messageDto);
 
@@ -75,7 +79,7 @@ namespace API.Hubs
             var result = await _context.SaveChangesAsync() > 0;
 
             if (!result) throw new HubException("Failed to update message");
-            messageDto = await CreateMessageObject(message);
+            messageDto = await messageFunctions.CreateMessageObject(message);
 
             await Clients.User(otherUserId).UpdateMessage(messageDto);
         }
@@ -94,7 +98,7 @@ namespace API.Hubs
 
             if (!result) throw new HubException("Failed to remove message");
 
-            var messageDto = await CreateMessageObject(message);
+            var messageDto = await messageFunctions.CreateMessageObject(message);
 
             await Clients.User(otherUserId).DeleteMessage(messageDto);
         }
@@ -103,7 +107,7 @@ namespace API.Hubs
         {
             var userId = userManager.GetUserId(Context.User);
             var otherUser = await userManager.FindByNameAsync(username);
-            //
+
             var friend = await _context.Friends
             .Include(f => f.Conversation)
                 .ThenInclude(c => c.Recipients)
@@ -114,7 +118,7 @@ namespace API.Hubs
             var message = friend.Conversation.Messages.FirstOrDefault(m => m.Id == messageId);
             if (message == null) throw new HubException("No such message found");
             if (friend == null) throw new HubException("You're not friends");
-            if (friend.Conversation == null) friend.Conversation = new Conversation(); // should not be needed
+            // if (friend.Conversation == null) friend.Conversation = new Conversation(); // should not be needed
             var userRecipient = friend.Conversation.Recipients.FirstOrDefault(r => r.UserId == userId);
             if (userRecipient.LastSeenMessageId == messageId) return;//throw new HubException("YOU'RE TRYING TO UPDATE THE DATABASE WITH THE SAME DATA!!!");
 
@@ -122,7 +126,7 @@ namespace API.Hubs
             var result = await _context.SaveChangesAsync() > 0;
             if (!result) throw new HubException("Failed to update message");
 
-            var messageDto = await CreateMessageObject(message);
+            var messageDto = await messageFunctions.CreateMessageObject(message);
             await Clients.User(otherUser.Id).SeenMessage(messageDto);
 
         }
@@ -137,24 +141,13 @@ namespace API.Hubs
             if (recipient.LastSeenMessageId == Guid.Empty) return null;
             var message = await _context.Messages.AsNoTracking().FirstOrDefaultAsync(m => m.Id == recipient.LastSeenMessageId);
             if (message == null) throw new HubException("Fatal error finding last seen message. Database may be unusable.");
-            var messageDto = await CreateMessageObject(message);
+            var messageDto = await messageFunctions.CreateMessageObject(message);
 
             return messageDto;
         }
 
 
-        private async Task<MessageDto> CreateMessageObject(Message message)
-        {
-            var sender = await userManager.FindByIdAsync(message.SenderId);
-            return new MessageDto
-            {
-                MessageId = message.Id.ToString(),
-                Content = message.Content,
-                Date = ((DateTimeOffset)message.Date).ToUnixTimeMilliseconds().ToString(),
-                SenderName = sender.UserName,
-                DateEdited = (message.DateEdited != DateTime.MinValue ? ((DateTimeOffset)message.DateEdited).ToUnixTimeMilliseconds().ToString() : null),
-            };
-        }
+
 
 
 
