@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using API.DTOs;
+using API.HelperFunctions;
 using API.Models;
 using Domain;
 using Microsoft.AspNetCore.Identity;
@@ -15,13 +16,13 @@ namespace API.Controllers
     [Route("api/[controller]")]
     public class FriendController : ControllerBase
     {
-        private readonly Context _context;
+        private readonly Context context;
 
         public UserManager<AppUser> userManager { get; }
         public FriendController(UserManager<AppUser> userManager, Context context)
         {
             this.userManager = userManager;
-            this._context = context;
+            this.context = context;
         }
         [HttpGet("send/{username}")]
         public async Task<ActionResult<FriendRequestDto>> SendRequest(string username)
@@ -31,18 +32,18 @@ namespace API.Controllers
             if (userUserName == username) return BadRequest("You can't be friends with yourself!");
             var recipient = await userManager.FindByNameAsync(username);
             if (recipient == null) return NotFound("No such recipient");
-            var alreadyFriends = await _context.Friends.Where(f => f.Person1Id == userId && f.Person2Id == recipient.Id || f.Person1Id == recipient.Id && f.Person2Id == userId).AnyAsync();
+            var alreadyFriends = await context.Friends.Where(f => f.Person1Id == userId && f.Person2Id == recipient.Id || f.Person1Id == recipient.Id && f.Person2Id == userId).AnyAsync();
             if (alreadyFriends) return BadRequest("Already friends");
 
-            var alreadyExistingRequest = await _context.FriendRequests.Where(fr => fr.SenderId == userId && fr.RecipientId == recipient.Id).AnyAsync();
+            var alreadyExistingRequest = await context.FriendRequests.Where(fr => fr.SenderId == userId && fr.RecipientId == recipient.Id).AnyAsync();
             if (alreadyExistingRequest) return BadRequest("Already sent same request");
             FriendRequest friendRequest = new FriendRequest
             {
                 SenderId = userId,
                 RecipientId = recipient.Id,
             };
-            await _context.FriendRequests.AddAsync(friendRequest);
-            var result = await _context.SaveChangesAsync() > 0;
+            await context.FriendRequests.AddAsync(friendRequest);
+            var result = await context.SaveChangesAsync() > 0;
 
             if (!result) return BadRequest("Failed to create friend request");
             return Ok(await CreateFriendRequestObject(friendRequest));
@@ -52,7 +53,7 @@ namespace API.Controllers
         {
             var userId = userManager.GetUserId(User);
 
-            var friendRequestList = await _context.FriendRequests.Where(fr => fr.SenderId == userId || fr.RecipientId == userId).ToListAsync<FriendRequest>();
+            var friendRequestList = await context.FriendRequests.Where(fr => fr.SenderId == userId || fr.RecipientId == userId).ToListAsync<FriendRequest>();
             return Ok(friendRequestList.Select(async el => await CreateFriendRequestObject(el)));
         }
         [HttpGet]
@@ -60,7 +61,7 @@ namespace API.Controllers
         {
             var userId = userManager.GetUserId(User);
 
-            var friendList = await _context.Friends.Include(t => t.Conversation).ThenInclude(t => t.Messages).Where(f => f.Person1Id == userId || f.Person2Id == userId).ToListAsync<Friend>();
+            var friendList = await context.Friends.Include(t => t.Conversation).ThenInclude(t => t.Messages).Where(f => f.Person1Id == userId || f.Person2Id == userId).ToListAsync<Friend>();
 
             return Ok(friendList.Select(async el => await CreateFriendObject(el)));
         }
@@ -69,14 +70,14 @@ namespace API.Controllers
         {
             var userId = userManager.GetUserId(User);
 
-            var request = await _context.FriendRequests.FindAsync(id);
+            var request = await context.FriendRequests.FindAsync(id);
             if (request == null) return NotFound("No such friend request found");
 
             if (request.RecipientId != userId) return BadRequest("You're not the receiver!");
 
             var otherUserId = (userId == request.SenderId ? request.RecipientId : request.SenderId);
 
-            _context.FriendRequests.Remove(request);
+            context.FriendRequests.Remove(request);
             Friend friend = new Friend
             {
                 Person1Id = userId,
@@ -84,8 +85,8 @@ namespace API.Controllers
                 Conversation = new Conversation(userId, otherUserId),
 
             };
-            await _context.Friends.AddAsync(friend);
-            var result = await _context.SaveChangesAsync() > 0;
+            await context.Friends.AddAsync(friend);
+            var result = await context.SaveChangesAsync() > 0;
 
             if (!result) return BadRequest("Failed to accept friend request");
             return Ok(await CreateFriendObject(friend));
@@ -96,11 +97,11 @@ namespace API.Controllers
         {
             var userId = userManager.GetUserId(User);
 
-            var request = await _context.FriendRequests.FindAsync(id);
+            var request = await context.FriendRequests.FindAsync(id);
             if (request == null) return NotFound("No such friend request found");
             if (request.RecipientId != userId && request.SenderId != userId) return BadRequest("You're not a part of this request!");
-            _context.FriendRequests.Remove(request);
-            var result = await _context.SaveChangesAsync() > 0;
+            context.FriendRequests.Remove(request);
+            var result = await context.SaveChangesAsync() > 0;
 
             if (!result) return BadRequest("Failed to decline friend request");
             return Ok("Declined!");
@@ -112,15 +113,15 @@ namespace API.Controllers
             var otherUser = await userManager.FindByNameAsync(username);
             if (otherUser == null) return NotFound("No such user found");
 
-            var friend = await _context.Friends
+            var friend = await context.Friends
             .Include(f => f.Conversation).ThenInclude(c => c.Messages)
             .Include(f => f.Conversation).ThenInclude(c => c.Recipients)
             .FirstOrDefaultAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
 
             if (friend == null) return BadRequest("You're not friends");
-            _context.Friends.Remove(friend);
+            context.Friends.Remove(friend);
 
-            var result = await _context.SaveChangesAsync() > 0;
+            var result = await context.SaveChangesAsync() > 0;
             if (!result) return BadRequest("Failed to remove friend");
             return Ok("Removed!");
         }
@@ -137,6 +138,7 @@ namespace API.Controllers
                 UserName = otherUser.UserName,
                 DisplayName = otherUser.DisplayName,
                 MessageCount = friend.Conversation.Messages.Count(),
+                Image = await ImageFunctions.GetUserImage(otherUser.UserName, userManager, context),
             };
             if (friend.Conversation.Messages.Any())
             {
@@ -156,6 +158,7 @@ namespace API.Controllers
             var otherUser = await userManager.FindByIdAsync(otherUserId);
             return new FriendRequestDto
             {
+                Image = await ImageFunctions.GetUserImage(otherUser.UserName, userManager, context),
                 IsOutbound = (userId == friendRequest.SenderId),
                 DisplayName = otherUser.DisplayName,
                 RequestId = friendRequest.Id.ToString(),

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using API.DTOs;
 
-namespace API.Models.Hubs
+namespace API.Hubs
 {
     public interface IClient
     {

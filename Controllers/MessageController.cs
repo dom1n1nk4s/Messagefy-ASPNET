@@ -1,16 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using API.Models;
-using Microsoft.AspNetCore.Identity;
-using Domain;
-using API.DTOs;
-using Microsoft.AspNetCore.SignalR;
-using API.Models.Hubs;
 using System.Security.Claims;
+using System.Threading.Tasks;
+using API.DTOs;
+using API.Hubs;
+using API.Models;
+using Domain;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 
 namespace API.Controllers
 {

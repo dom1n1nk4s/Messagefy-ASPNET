@@ -2,13 +2,14 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using API.DTOs;
+using API.Models;
 using Domain;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
-namespace API.Models.Hubs
+namespace API.Hubs
 {
     [Authorize]
     public class MessageHub : Hub<IClient>
