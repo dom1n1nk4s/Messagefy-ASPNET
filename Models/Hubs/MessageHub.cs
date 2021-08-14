@@ -133,7 +133,9 @@ namespace API.Models.Hubs
             var friend = await _context.Friends.Include(f => f.Conversation).ThenInclude(c => c.Recipients).AsNoTracking().FirstOrDefaultAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
             if (friend == null) throw new HubException("You're not friends");
             var recipient = friend.Conversation.Recipients.FirstOrDefault(r => r.UserId == otherUser.Id);
+            if (recipient.LastSeenMessageId == Guid.Empty) return null;
             var message = await _context.Messages.AsNoTracking().FirstOrDefaultAsync(m => m.Id == recipient.LastSeenMessageId);
+            if (message == null) throw new HubException("Fatal error finding last seen message. Database may be unusable.");
             var messageDto = await CreateMessageObject(message);
 
             return messageDto;
