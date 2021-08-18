@@ -36,7 +36,7 @@ namespace API
                 options.AddDefaultPolicy(
                  builder =>
                  {
-                     builder.AllowAnyHeader().AllowAnyMethod().WithOrigins("http://localhost:3000", "http://10.144.0.2:3000").AllowCredentials(); // shits fucked
+                     builder.AllowAnyHeader().AllowAnyMethod().WithOrigins("http://localhost:3000", "http://10.144.0.2:3000").AllowCredentials();
                  });
             });
 

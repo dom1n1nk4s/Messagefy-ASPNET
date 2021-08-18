@@ -33,10 +33,10 @@ namespace API.Hubs
             var userId = userManager.GetUserId(Context.User);
             var otherUser = await userManager.FindByNameAsync(username);
             if (otherUser == null) throw new HubException("No such user found");
-            var friend = await _context.Friends.Include(t => t.Conversation).ThenInclude(t => t.Messages).AsNoTracking().FirstOrDefaultAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
+            var friend = await _context.Friends.AsNoTracking().Include(t => t.Conversation).ThenInclude(t => t.Messages).FirstOrDefaultAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
             if (friend == null) throw new HubException("You're not friends");
             var conversation = friend.Conversation;
-            var messageList = conversation.Messages.OrderBy(x => x.Date).Skip(num).TakeLast(20).Select(async m => await messageFunctions.CreateMessageObject(m)).Select(m => m.Result).Reverse().ToList();
+            var messageList = conversation.Messages.OrderBy(x => x.Date).SkipLast(num).TakeLast(20).Select(async m => await messageFunctions.CreateMessageObject(m)).Select(m => m.Result).Reverse().ToList();
 
             await Clients.Caller.ReceiveMessages(messageList);
 

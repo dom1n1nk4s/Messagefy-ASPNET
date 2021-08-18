@@ -23,7 +23,7 @@ namespace API.Controllers
         private readonly UserManager<AppUser> userManager;
         private readonly Context context;
         private readonly IHubContext<MessageHub> hub;
-        private readonly List<string> ImageExtensions = new List<string> { ".JPG", ".JPE", ".BMP", ".GIF", ".PNG" };
+        private readonly List<string> ImageExtensions = new List<string> { "JPG", "JPEG", "JPE", "BMP", "GIF", "PNG" };
         private readonly MessageFunctions messageFunctions;
 
         public FileController(UserManager<AppUser> userManager, Context context, IHubContext<MessageHub> hub)
@@ -36,6 +36,7 @@ namespace API.Controllers
         [HttpPost("sendmessage/{username}")]
         public async Task<IActionResult> SendBinaryMessage(string username, IFormFile file)
         {
+            if (file == null) return BadRequest("File is null");
             var userId = userManager.GetUserId(User);
             var otherUser = await userManager.FindByNameAsync(username);
             if (otherUser == null) return NotFound("No such user found");
@@ -67,7 +68,7 @@ namespace API.Controllers
 
             Message message = new Message
             {
-                Content = dbFile.Id.ToString(),
+                Content = String.Format("{0},{1}", dbFile.FileName, dbFile.Id.ToString()),
                 IsReferenceToFile = true,
                 Date = DateTime.Now,
                 SenderId = userId,
@@ -83,18 +84,25 @@ namespace API.Controllers
             return Ok(messageDto);
         }
         [HttpGet("receivemessage/{id}")]
-        public async Task<IActionResult> ReceiveBinaryMessage(string id)
+        public async Task<IActionResult> ReceiveBinaryMessage(Guid id)
         {
             var userId = userManager.GetUserId(User);
 
-            Models.File dbFile = await context.Files.Include(f => f.Conversation).ThenInclude(c => c.Recipients).AsNoTracking().FirstOrDefaultAsync(f => f.Id == System.Guid.Parse(id));
+            Models.File dbFile = await context.Files.AsNoTracking().Include(f => f.Conversation).ThenInclude(c => c.Recipients).AsNoTracking().FirstOrDefaultAsync(f => f.Id == id);
             if (dbFile == null) return BadRequest("No such file found");
 
             var recipient = dbFile.Conversation.Recipients.FirstOrDefault(r => r.UserId == userId);
             if (recipient == null) return BadRequest("This file is not accessable to you");
+            var splitName = dbFile.FileName.Split('.');
+            var fileExtension = splitName.Count() == 1 ? "" : splitName.Last();
+            var fileDto = new FileDto
+            {
+                FileName = dbFile.FileName.Substring(0, dbFile.FileName.Count() - fileExtension.Count() - (fileExtension.Count() == 0 ? 0 : 1)),
+                FileExtension = fileExtension,
+                Data = Convert.ToBase64String(dbFile.Data),
+            };
 
-            var data = Convert.ToBase64String(dbFile.Data);
-            return Ok(data);
+            return Ok(fileDto);
         }
 
 
@@ -103,7 +111,8 @@ namespace API.Controllers
         public async Task<IActionResult> SetUserProfile(IFormFile file)
         {
             if (file == null) return BadRequest("File is null");
-            if (!ImageExtensions.Contains(file.FileName)) return BadRequest("Not an image");
+            var fileExtension = file.FileName.ToUpper().Split('.').Last();
+            if (!ImageExtensions.Contains(fileExtension)) return BadRequest("Not an image");
             if (file.Length > 4 * 1024 * 1024) return BadRequest("File too large");
             var userId = userManager.GetUserId(User);
 
@@ -117,11 +126,14 @@ namespace API.Controllers
             };
             ms.Close();
             ms.Dispose();
-            var alreadyExistingImage = await context.Images.FindAsync(userId);
-            if (alreadyExistingImage != null)
+            var alreadyExistingImage = await context.Images.FindAsync(System.Guid.Parse(userId));
+            if (alreadyExistingImage == null)
                 context.Images.Add(img);
             else
-                alreadyExistingImage = img;
+            {
+                alreadyExistingImage.Data = img.Data;
+                alreadyExistingImage.FileName = img.FileName;
+            }
             var result = await context.SaveChangesAsync() > 0;
             if (!result) return BadRequest("Failed to save image");
 

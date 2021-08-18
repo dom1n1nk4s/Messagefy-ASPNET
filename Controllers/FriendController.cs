@@ -146,7 +146,7 @@ namespace API.Controllers
             if (friend.Conversation.Messages.Any())
             {
                 var lastMessage = friend.Conversation.Messages.Aggregate((m1, m2) => m1.Date > m2.Date ? m1 : m2);
-
+                friendDto.LastMessageIsReferenceToFile = lastMessage.IsReferenceToFile;
                 friendDto.LastMessageContent = lastMessage.Content;
                 friendDto.LastMessageDate = ((DateTimeOffset)lastMessage.Date).ToUnixTimeMilliseconds().ToString();
 
