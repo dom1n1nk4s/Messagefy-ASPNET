@@ -22,35 +22,25 @@ namespace API.Controllers
     {
         private readonly UserManager<AppUser> userManager;
         private readonly Context context;
-        private readonly IHubContext<MessageHub> hub;
+        private readonly IHubContext<MessageHub, IClient> hub;
         private readonly List<string> ImageExtensions = new List<string> { "JPG", "JPEG", "JPE", "BMP", "GIF", "PNG" };
         private readonly MessageFunctions messageFunctions;
 
-        public FileController(UserManager<AppUser> userManager, Context context, IHubContext<MessageHub> hub)
+        public FileController(UserManager<AppUser> userManager, Context context, IHubContext<MessageHub, IClient> hub)
         {
             this.userManager = userManager;
             this.context = context;
             this.hub = hub;
             messageFunctions = new MessageFunctions(userManager);
         }
-        [HttpPost("sendmessage/{username}")]
-        public async Task<IActionResult> SendBinaryMessage(string username, IFormFile file)
+        [HttpPost("sendmessagegroup/{id}")]
+        public async Task<ActionResult<MessageDto>> SendBinaryMessage(Guid id, IFormFile file)
         {
             if (file == null) return BadRequest("File is null");
             var userId = userManager.GetUserId(User);
-            var otherUser = await userManager.FindByNameAsync(username);
-            if (otherUser == null) return NotFound("No such user found");
+            var conversation = await context.Conversations.Include(c => c.Messages).Include(c => c.Files).FirstOrDefaultAsync(c => c.Id == id);
+            if (conversation == null) return NotFound("No such conversation found");
             if (file.Length > 25 * 1024 * 1024) return BadRequest("File too large");
-            if (userId == otherUser.Id) return BadRequest("You can't send a message to yourself");
-
-            var friend = await context.Friends
-            .Include(t => t.Conversation)
-                .ThenInclude(t => t.Messages)
-            .Include(f => f.Conversation)
-                .ThenInclude(c => c.Files)
-            .FirstAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
-
-            if (friend == null) return BadRequest("You're not friends");
 
             MemoryStream ms = new MemoryStream();
             file.CopyTo(ms);
@@ -64,7 +54,7 @@ namespace API.Controllers
             ms.Close();
             ms.Dispose();
 
-            friend.Conversation.Files.Add(dbFile);
+            conversation.Files.Add(dbFile);
 
             Message message = new Message
             {
@@ -73,16 +63,17 @@ namespace API.Controllers
                 Date = DateTime.Now,
                 SenderId = userId,
             };
-            friend.Conversation.Messages.Add(message);
+            conversation.Messages.Add(message);
 
 
             var result = await context.SaveChangesAsync() > 0;
             if (!result) return BadRequest("Failed to create message");
-            MessageDto messageDto = await messageFunctions.CreateMessageObject(message);
+            MessageDto messageDto = await messageFunctions.CreateMessageObjectAsync(message);
 
-            await hub.Clients.User(otherUser.Id).SendAsync("ReceiveMessage", messageDto);
+            await hub.Clients.Users(message.Conversation.Recipients.Select(r => r.UserId).Except(new List<string> { userId })).ReceiveMessage(messageDto);
             return Ok(messageDto);
         }
+
         [HttpGet("receivemessage/{id}")]
         public async Task<IActionResult> ReceiveBinaryMessage(Guid id)
         {
@@ -105,16 +96,50 @@ namespace API.Controllers
             return Ok(fileDto);
         }
 
+        [HttpPost("sendgroup")]
+        public async Task<IActionResult> SetGroupProfile([FromForm] Guid id, [FromForm] IFormFile file)
+        {
+            var userId = userManager.GetUserId(User);
+            var conversation = await context.Conversations.Include(c => c.Recipients).Include(c => c.Messages).FirstOrDefaultAsync(c => c.Id == id);
+            if (conversation == null) return NotFound("No such group found");
+            if (!conversation.IsGroup) return BadRequest("Not a group");
+            else if (conversation.Recipients.FirstOrDefault(r => r.UserId == userId) == null) return BadRequest("You're not a part of this group!");
 
+            string result;
+            try
+            {
+                result = await SetConversationImage(id, file);
+            }
+            catch (Exception err)
+            {
+                return BadRequest(err.Message);
+            }
+
+            return Ok(result);
+        }
 
         [HttpPost("sendprofile")]
         public async Task<IActionResult> SetUserProfile(IFormFile file)
         {
-            if (file == null) return BadRequest("File is null");
-            var fileExtension = file.FileName.ToUpper().Split('.').Last();
-            if (!ImageExtensions.Contains(fileExtension)) return BadRequest("Not an image");
-            if (file.Length > 4 * 1024 * 1024) return BadRequest("File too large");
             var userId = userManager.GetUserId(User);
+            string result;
+            try
+            {
+                result = await SetConversationImage(System.Guid.Parse(userId), file);
+            }
+            catch (Exception err)
+            {
+                return BadRequest(err.Message);
+            }
+
+            return Ok(result);
+        }
+        private async Task<string> SetConversationImage(Guid id, IFormFile file)
+        {
+            if (file == null) throw new Exception("File is null");
+            var fileExtension = file.FileName.ToUpper().Split('.').Last();
+            if (!ImageExtensions.Contains(fileExtension)) throw new Exception("Not an image");
+            if (file.Length > 4 * 1024 * 1024) throw new Exception("File too large");
 
             MemoryStream ms = new MemoryStream();
             file.CopyTo(ms);
@@ -122,22 +147,24 @@ namespace API.Controllers
             {
                 FileName = file.FileName,
                 Data = ms.ToArray(),
-                Id = System.Guid.Parse(userId),
+                Id = id,
             };
             ms.Close();
             ms.Dispose();
-            var alreadyExistingImage = await context.Images.FindAsync(System.Guid.Parse(userId));
+            var alreadyExistingImage = await context.Images.FindAsync(id);
             if (alreadyExistingImage == null)
                 context.Images.Add(img);
             else
             {
+                if (alreadyExistingImage.Data == img.Data && alreadyExistingImage.FileName == img.FileName) throw new Exception("Same image is already set");
                 alreadyExistingImage.Data = img.Data;
                 alreadyExistingImage.FileName = img.FileName;
             }
             var result = await context.SaveChangesAsync() > 0;
-            if (!result) return BadRequest("Failed to save image");
+            if (!result) throw new Exception("Failed to save image");
 
-            return Ok("Received!");
+            return "Received!";
+
         }
 
 

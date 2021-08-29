@@ -17,7 +17,7 @@ namespace API.HelperFunctions
             this.context = context;
         }
 
-        public async Task<string> GetUserImage(string username)
+        public async Task<string> GetUserImageAsync(string username)
         {
             var otherUser = await userManager.FindByNameAsync(username);
             var img = await context.Images.FindAsync(System.Guid.Parse(otherUser.Id));

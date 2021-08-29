@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using API.DTOs;
@@ -27,129 +28,87 @@ namespace API.Hubs
             messageFunctions = new MessageFunctions(userManager);
         }
 
-        public async Task DownloadMessages(string username, int num = 0)
+        public async Task DownloadMessages(Guid id, int num = 0)
         {
-
             var userId = userManager.GetUserId(Context.User);
-            var otherUser = await userManager.FindByNameAsync(username);
-            if (otherUser == null) throw new HubException("No such user found");
-            var friend = await _context.Friends.AsNoTracking().Include(t => t.Conversation).ThenInclude(t => t.Messages).FirstOrDefaultAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
-            if (friend == null) throw new HubException("You're not friends");
-            var conversation = friend.Conversation;
-            var messageList = conversation.Messages.OrderBy(x => x.Date).SkipLast(num).TakeLast(20).Select(async m => await messageFunctions.CreateMessageObject(m)).Select(m => m.Result).Reverse().ToList();
+            var conversation = await _context.Conversations.AsNoTracking().Include(c => c.Messages).Include(c => c.Recipients).FirstOrDefaultAsync(c => c.Id == id);
+            if (conversation == null) throw new HubException("No such conversation found");
+            if (conversation.Recipients.FirstOrDefault(r => r.UserId == userId) == null) throw new HubException("You're not a part of this conversation");
+            var messageList = conversation.Messages.OrderBy(x => x.Date).SkipLast(num).TakeLast(20).Select(async m => await messageFunctions.CreateMessageObjectAsync(m)).Select(m => m.Result).Reverse().ToList();
 
             await Clients.Caller.ReceiveMessages(messageList);
-
         }
-        public async Task<MessageDto> PostMessage(string username, Message message)
+
+        public async Task<MessageDto> PostMessage(Guid id, Message message)
         {
             var userId = userManager.GetUserId(Context.User);
-            var otherUser = await userManager.FindByNameAsync(username);
-            if (otherUser == null) throw new HubException("No such user found");
-            if (!message.Content.Any()) throw new HubException("Empty message");
-            if (userId == otherUser.Id) throw new HubException("You can't send a message to yourself");
-            var friend = await _context.Friends.Include(t => t.Conversation).ThenInclude(t => t.Messages).FirstOrDefaultAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
-            if (friend == null) throw new HubException("You're not friends");
-            if (friend.Conversation == null) friend.Conversation = new Conversation();
+            var conversation = await _context.Conversations.Include(c => c.Messages).Include(c => c.Recipients).FirstOrDefaultAsync(c => c.Id == id);
+            if (conversation == null) throw new HubException("No such conversation found");
+            if (conversation.Recipients.FirstOrDefault(r => r.UserId == userId) == null) throw new HubException("You're not a part of this conversation");
             message.SenderId = userId;
             message.Date = DateTime.Now;
-            friend.Conversation.Messages.Add(message);
-            // friend.Conversation.Recipients.FirstOrDefault(r => r.UserId == userId).LastSeenMessageId = message.Id; // will crash due to id not being set yet
+            conversation.Messages.Add(message);
             var result = await _context.SaveChangesAsync() > 0;
             if (!result) throw new HubException("Failed to create message");
-            var messageDto = await messageFunctions.CreateMessageObject(message);
+            var messageDto = await messageFunctions.CreateMessageObjectAsync(message);
 
-            await Clients.User(otherUser.Id).ReceiveMessage(messageDto);
+            await Clients.Users(message.Conversation.Recipients.Select(r => r.UserId).Except(new List<string> { userId })).ReceiveMessage(messageDto);
 
             return messageDto;
         }
-
         public async Task EditMessage(Guid id, MessageDto messageDto)
         {
             var userId = userManager.GetUserId(Context.User);
-            var message = await _context.Messages.Include(m => m.Conversation).ThenInclude(c => c.Friend).FirstOrDefaultAsync(m => m.Id == id);
+            var message = await _context.Messages.Include(m => m.Conversation).ThenInclude(c => c.Recipients).FirstOrDefaultAsync(m => m.Id == id);
             if (message == null) throw new HubException("No such message found");
             if (message.SenderId != userId) throw new HubException("You're not the sender!");
             if (!message.Content.Any()) throw new HubException("Empty message");
             message.Content = messageDto.Content;
             message.DateEdited = DateTime.Now;
 
-            var otherUserId = (message.Conversation.Friend.Person1Id == userId ? message.Conversation.Friend.Person2Id : message.Conversation.Friend.Person1Id);
-
             var result = await _context.SaveChangesAsync() > 0;
 
             if (!result) throw new HubException("Failed to update message");
-            messageDto = await messageFunctions.CreateMessageObject(message);
+            messageDto = await messageFunctions.CreateMessageObjectAsync(message);
 
-            await Clients.User(otherUserId).UpdateMessage(messageDto);
+            await Clients.Users(message.Conversation.Recipients.Select(r => r.UserId).Except(new List<string> { userId })).UpdateMessage(messageDto);
         }
 
         public async Task DeleteMessage(Guid id)
         {
             var userId = userManager.GetUserId(Context.User);
 
-            var message = await _context.Messages.Include(m => m.Conversation).ThenInclude(c => c.Friend).FirstOrDefaultAsync(m => m.Id == id);
+            var message = await _context.Messages.Include(m => m.Conversation).ThenInclude(c => c.Recipients).FirstOrDefaultAsync(m => m.Id == id);
             if (message == null) throw new HubException("No such message found");
             if (message.SenderId != userId) throw new HubException("You're not the sender!");
 
-            var otherUserId = (message.Conversation.Friend.Person1Id == userId ? message.Conversation.Friend.Person2Id : message.Conversation.Friend.Person1Id);
             _context.Messages.Remove(message);
-            var result = await _context.SaveChangesAsync() > 0;
 
+            var result = await _context.SaveChangesAsync() > 0;
             if (!result) throw new HubException("Failed to remove message");
 
-            var messageDto = await messageFunctions.CreateMessageObject(message);
+            var messageDto = await messageFunctions.CreateMessageObjectAsync(message);
 
-            await Clients.User(otherUserId).DeleteMessage(messageDto);
+            await Clients.Users(message.Conversation.Recipients.Select(r => r.UserId).Except(new List<string> { userId })).DeleteMessage(messageDto);
         }
 
-        public async Task SeenMessage(string username, Guid messageId)
+        public async Task SeenMessage(Guid messageId)
         {
             var userId = userManager.GetUserId(Context.User);
-            var otherUser = await userManager.FindByNameAsync(username);
 
-            var friend = await _context.Friends
-            .Include(f => f.Conversation)
-                .ThenInclude(c => c.Recipients)
-            .AsSplitQuery()
-            .Include(f => f.Conversation)
-                .ThenInclude(c => c.Messages)
-            .FirstOrDefaultAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
-            var message = friend.Conversation.Messages.FirstOrDefault(m => m.Id == messageId);
+            var message = _context.Messages.Include(m => m.Conversation).ThenInclude(c => c.Recipients).FirstOrDefault(m => m.Id == messageId);
             if (message == null) throw new HubException("No such message found");
-            if (friend == null) throw new HubException("You're not friends");
-            // if (friend.Conversation == null) friend.Conversation = new Conversation(); // should not be needed
-            var userRecipient = friend.Conversation.Recipients.FirstOrDefault(r => r.UserId == userId);
-            if (userRecipient.LastSeenMessageId == messageId) return;//throw new HubException("YOU'RE TRYING TO UPDATE THE DATABASE WITH THE SAME DATA!!!");
+            var userRecipient = message.Conversation.Recipients.FirstOrDefault(r => r.UserId == userId);
+            if (userRecipient == null) throw new HubException("You're not a part of this conversation");
+            if (userRecipient.LastSeenMessageId == messageId) return; // shouldnt be allowed to happen
 
             userRecipient.LastSeenMessageId = messageId;
             var result = await _context.SaveChangesAsync() > 0;
             if (!result) throw new HubException("Failed to update message");
 
-            var messageDto = await messageFunctions.CreateMessageObject(message);
-            await Clients.User(otherUser.Id).SeenMessage(messageDto);
+            var messageDto = await messageFunctions.CreateMessageObjectAsync(message);
+            await Clients.Users(message.Conversation.Recipients.Select(r => r.UserId).Except(new List<string> { userId })).SeenMessage(messageDto);
 
         }
-        public async Task<MessageDto> GetSeenMessageId(string username)
-        {
-            var userId = userManager.GetUserId(Context.User);
-            var otherUser = await userManager.FindByNameAsync(username);
-            if (otherUser == null) throw new HubException("No such user found");
-            var friend = await _context.Friends.Include(f => f.Conversation).ThenInclude(c => c.Recipients).AsNoTracking().FirstOrDefaultAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
-            if (friend == null) throw new HubException("You're not friends");
-            var recipient = friend.Conversation.Recipients.FirstOrDefault(r => r.UserId == otherUser.Id);
-            if (recipient.LastSeenMessageId == Guid.Empty) return null;
-            var message = await _context.Messages.AsNoTracking().FirstOrDefaultAsync(m => m.Id == recipient.LastSeenMessageId);
-            if (message == null) throw new HubException("Fatal error finding last seen message. Database may be unusable.");
-            var messageDto = await messageFunctions.CreateMessageObject(message);
-
-            return messageDto;
-        }
-
-
-
-
-
-
     }
 }

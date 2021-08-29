@@ -7,7 +7,6 @@ namespace API.Models
         public Guid Id { get; set; }
         public string Person1Id { get; set; }
         public string Person2Id { get; set; }
-        public Conversation Conversation {get;set;}
-        
+
     }
 }

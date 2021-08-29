@@ -10,9 +10,13 @@ namespace API.Models
             Messages = new List<Message>();
             Recipients = new List<Recipient>();
             Files = new List<File>();
+            IsGroup = true;
+            Id = System.Guid.NewGuid();
         }
-        public Conversation(string Id1, string Id2)
+        public Conversation(string Id1, string Id2, Guid friendId)
         {
+            Id = friendId;
+            IsGroup = false;
             Messages = new List<Message>();
             Recipients = new List<Recipient>(){
                 new Recipient{
@@ -27,12 +31,11 @@ namespace API.Models
 
         public Guid Id { get; set; }
         public string Title { get; set; }
-        public string Image { get; set; }
         public bool IsGroup { get; set; }
         public virtual ICollection<Message> Messages { get; private set; }
         public virtual ICollection<Recipient> Recipients { get; private set; }
         public virtual ICollection<File> Files { get; private set; }
-        public Guid FriendId { get; set; }
-        public Friend Friend { get; set; }
+        // public Guid FriendId { get; set; }
+        // public Friend Friend { get; set; }
     }
 }

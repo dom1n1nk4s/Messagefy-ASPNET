@@ -23,7 +23,8 @@ namespace API.Models
             builder.Entity<Conversation>().HasMany(t => t.Messages).WithOne(t => t.Conversation);
             builder.Entity<Conversation>().HasMany(t => t.Recipients).WithOne(t => t.Conversation);
             builder.Entity<Conversation>().HasMany(t => t.Files).WithOne(t => t.Conversation);
-            builder.Entity<Friend>().HasOne(t => t.Conversation).WithOne(t => t.Friend).HasForeignKey<Conversation>(t => t.FriendId);
+            builder.Entity<Conversation>().Property(i => i.Id).ValueGeneratedNever();
+            builder.Entity<Friend>().Property(i => i.Id).ValueGeneratedNever();
             builder.Entity<Image>().Property(i => i.Id).ValueGeneratedNever();
             builder.Entity<File>().Property(i => i.Id).ValueGeneratedNever();
 

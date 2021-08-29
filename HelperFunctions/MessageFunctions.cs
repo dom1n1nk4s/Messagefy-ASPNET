@@ -15,18 +15,21 @@ namespace API.HelperFunctions
             this.userManager = userManager;
         }
 
-        public async Task<MessageDto> CreateMessageObject(Message message)
+        public async Task<MessageDto> CreateMessageObjectAsync(Message message)
         {
             var sender = await userManager.FindByIdAsync(message.SenderId);
-            return new MessageDto
+            var messageDto = new MessageDto
             {
                 IsReferenceToFile = message.IsReferenceToFile,
                 MessageId = message.Id.ToString(),
                 Content = message.Content,
                 Date = ((DateTimeOffset)message.Date).ToUnixTimeMilliseconds().ToString(),
-                SenderName = sender.UserName,
+
                 DateEdited = (message.DateEdited != DateTime.MinValue ? ((DateTimeOffset)message.DateEdited).ToUnixTimeMilliseconds().ToString() : null),
             };
+            if (sender != null)
+                messageDto.SenderName = sender.UserName;
+            return messageDto;
         }
     }
 }

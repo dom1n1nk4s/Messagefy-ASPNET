@@ -64,7 +64,7 @@ namespace API.Controllers
         {
             var userId = userManager.GetUserId(User);
 
-            var friendList = await context.Friends.Include(t => t.Conversation).ThenInclude(t => t.Messages).Where(f => f.Person1Id == userId || f.Person2Id == userId).ToListAsync<Friend>();
+            var friendList = await context.Friends.AsNoTracking().Where(f => f.Person1Id == userId || f.Person2Id == userId).ToListAsync<Friend>();
 
             return Ok(friendList.Select(async el => await CreateFriendObject(el)));
         }
@@ -83,12 +83,14 @@ namespace API.Controllers
             context.FriendRequests.Remove(request);
             Friend friend = new Friend
             {
+                Id = System.Guid.NewGuid(),
                 Person1Id = userId,
                 Person2Id = otherUserId,
-                Conversation = new Conversation(userId, otherUserId),
 
             };
+            var conversation = new Conversation(userId, otherUserId, friend.Id);
             await context.Friends.AddAsync(friend);
+            await context.Conversations.AddAsync(conversation);
             var result = await context.SaveChangesAsync() > 0;
 
             if (!result) return BadRequest("Failed to accept friend request");
@@ -117,9 +119,8 @@ namespace API.Controllers
             if (otherUser == null) return NotFound("No such user found");
 
             var friend = await context.Friends
-            .Include(f => f.Conversation).ThenInclude(c => c.Messages)
-            .Include(f => f.Conversation).ThenInclude(c => c.Recipients)
             .FirstOrDefaultAsync(f => f.Person1Id == userId && f.Person2Id == otherUser.Id || f.Person1Id == otherUser.Id && f.Person2Id == userId);
+            var conversation = context.Conversations.Include(c => c.Messages).Include(c => c.Recipients).Include(c => c.Files).FirstOrDefaultAsync(c => c.Id == friend.Id);
 
             if (friend == null) return BadRequest("You're not friends");
             context.Friends.Remove(friend);
@@ -135,17 +136,20 @@ namespace API.Controllers
             var userId = userManager.GetUserId(User);
             var otherUserId = (userId == friend.Person1Id ? friend.Person2Id : friend.Person1Id);
             var otherUser = await userManager.FindByIdAsync(otherUserId);
-            if (friend.Conversation == null) friend.Conversation = new Conversation();
+            var conversation = await context.Conversations.Include(c => c.Recipients).Include(c => c.Messages).FirstOrDefaultAsync(c => c.Id == friend.Id);
+            var recipient = conversation.Recipients.FirstOrDefault(r => r.UserId == otherUserId);
             var friendDto = new FriendDto
             {
                 UserName = otherUser.UserName,
                 DisplayName = otherUser.DisplayName,
-                MessageCount = friend.Conversation.Messages.Count(),
-                Image = await imageFunctions.GetUserImage(otherUser.UserName),
+                MessageCount = conversation.Messages.Count(),
+                Image = await imageFunctions.GetUserImageAsync(otherUser.UserName),
+                ConversationId = conversation.Id.ToString(),
+                LastSeenMessageId = recipient.LastSeenMessageId != System.Guid.Empty ? recipient.LastSeenMessageId.ToString() : null,
             };
-            if (friend.Conversation.Messages.Any())
+            if (conversation.Messages.Any())
             {
-                var lastMessage = friend.Conversation.Messages.Aggregate((m1, m2) => m1.Date > m2.Date ? m1 : m2);
+                var lastMessage = conversation.Messages.Aggregate((m1, m2) => m1.Date > m2.Date ? m1 : m2);
                 friendDto.LastMessageIsReferenceToFile = lastMessage.IsReferenceToFile;
                 friendDto.LastMessageContent = lastMessage.Content;
                 friendDto.LastMessageDate = ((DateTimeOffset)lastMessage.Date).ToUnixTimeMilliseconds().ToString();
@@ -161,7 +165,7 @@ namespace API.Controllers
             var otherUser = await userManager.FindByIdAsync(otherUserId);
             return new FriendRequestDto
             {
-                Image = await imageFunctions.GetUserImage(otherUser.UserName),
+                Image = await imageFunctions.GetUserImageAsync(otherUser.UserName),
                 IsOutbound = (userId == friendRequest.SenderId),
                 DisplayName = otherUser.DisplayName,
                 RequestId = friendRequest.Id.ToString(),

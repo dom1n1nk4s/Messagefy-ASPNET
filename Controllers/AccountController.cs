@@ -33,7 +33,7 @@ namespace API.Controllers
 
         }
         [HttpPost("login")]
-        public async Task<ActionResult<UserDto>> Login(LoginDto loginDto)
+        public async Task<ActionResult<AuthenticatedDto>> Login(LoginDto loginDto)
         {
             var user = await UserManager.FindByEmailAsync(loginDto.Email);
 
@@ -48,7 +48,7 @@ namespace API.Controllers
             return Unauthorized(result.ToString());
         }
         [HttpPost("register")]
-        public async Task<ActionResult<UserDto>> Register(RegisterDto registerDto)
+        public async Task<ActionResult<AuthenticatedDto>> Register(RegisterDto registerDto)
         {
             if (await UserManager.Users.AnyAsync(x => x.Email == registerDto.Email))
             {
@@ -74,18 +74,18 @@ namespace API.Controllers
         }
         [Authorize]
         [HttpGet]
-        public async Task<ActionResult<UserDto>> GetCurrentUser()
+        public async Task<ActionResult<AuthenticatedDto>> GetCurrentUser()
         {
             var user = await UserManager.FindByEmailAsync(User.FindFirstValue(ClaimTypes.Email));
 
             return await CreateUserObject(user);
         }
-        private async Task<UserDto> CreateUserObject(AppUser user)
+        private async Task<AuthenticatedDto> CreateUserObject(AppUser user)
         {
-            return new UserDto
+            return new AuthenticatedDto
             {
                 DisplayName = user.DisplayName,
-                Image = await imageFunctions.GetUserImage(user.UserName),
+                Image = await imageFunctions.GetUserImageAsync(user.UserName),
                 Token = tokenService.CreateToken(user),
                 Username = user.UserName,
 
