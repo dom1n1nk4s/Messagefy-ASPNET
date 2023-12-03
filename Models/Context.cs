@@ -10,13 +10,13 @@ namespace API.Models
         {
         }
 
-        public DbSet<Message> Messages { get; set; }
-        public DbSet<Recipient> Recipients { get; set; }
-        public DbSet<FriendRequest> FriendRequests { get; set; }
-        public DbSet<Friend> Friends { get; set; }
-        public DbSet<Conversation> Conversations { get; set; }
-        public DbSet<File> Files { get; set; }
-        public DbSet<Image> Images { get; set; }
+        public virtual DbSet<Message> Messages { get; set; }
+        public virtual DbSet<Recipient> Recipients { get; set; }
+        public virtual DbSet<FriendRequest> FriendRequests { get; set; }
+        public virtual DbSet<Friend> Friends { get; set; }
+        public virtual DbSet<Conversation> Conversations { get; set; }
+        public virtual DbSet<File> Files { get; set; }
+        public virtual DbSet<Image> Images { get; set; }
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
